@@ -113,6 +113,29 @@ func TestClickSidebarSelectsItem(t *testing.T) {
 	}
 }
 
+func TestZoomHidesSidebar(t *testing.T) {
+	m, copied := selectionModel(t)
+	narrow := m.vp.Width
+	m.Update(key("z"))
+	if !m.zoom || m.focus != focusLogs || m.vp.Width <= narrow || strings.Contains(m.View(), "Servers") {
+		t.Fatalf("zoom: zoom=%v focus=%v width %d -> %d", m.zoom, m.focus, narrow, m.vp.Width)
+	}
+	for _, ln := range strings.Split(m.View(), "\n") {
+		if w := ansi.StringWidth(ln); w > 140 {
+			t.Fatalf("line wider than terminal (%d): %q", w, ansi.Strip(ln))
+		}
+	}
+	ox, oy := m.logOrigin()
+	if got := drag(t, m, copied, ox, oy, ox+11, oy); got != "10:21:00.123" {
+		t.Fatalf("copied %q while zoomed", got)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc}) // clears the selection
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.zoom || m.focus != focusSidebar || m.vp.Width != narrow {
+		t.Fatalf("esc: zoom=%v focus=%v width=%d", m.zoom, m.focus, m.vp.Width)
+	}
+}
+
 func TestSelectionKeepsLayout(t *testing.T) {
 	m, copied := selectionModel(t)
 	ox, oy := m.logOrigin()

@@ -157,6 +157,8 @@ type model struct {
 	hideHealth bool
 	pretty     bool
 	raw        bool
+	noWrap     bool
+	zoom       bool
 	follow     bool
 
 	// visual and plain hold the viewport content as rendered and ANSI-stripped
@@ -385,6 +387,7 @@ func (m *model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focus = focusLogs
 		} else {
 			m.focus = focusSidebar
+			m.setZoom(false)
 		}
 		return m, nil
 	case "x":
@@ -405,6 +408,16 @@ func (m *model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.raw = !m.raw
 		m.rerender()
+		return m, nil
+	case "w":
+		m.noWrap = !m.noWrap
+		m.rerender()
+		return m, nil
+	case "z":
+		m.setZoom(!m.zoom)
+		if m.zoom {
+			m.focus = focusLogs
+		}
 		return m, nil
 	case "G", "end":
 		m.follow = true
@@ -427,6 +440,7 @@ func (m *model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "esc":
 			m.focus = focusSidebar
+			m.setZoom(false)
 			return m, nil
 		case "g", "home":
 			m.follow = false
@@ -499,7 +513,17 @@ func (m *model) appendLines(lines []string) {
 }
 
 func (m *model) formatOptions() FormatOptions {
-	return FormatOptions{Width: m.vp.Width, PrettyJSON: m.pretty, Raw: m.raw}
+	return FormatOptions{Width: m.vp.Width, PrettyJSON: m.pretty, Raw: m.raw, NoWrap: m.noWrap}
+}
+
+// setZoom shows or hides the sidebar, re-wrapping logs to the new width.
+func (m *model) setZoom(on bool) {
+	if m.zoom == on {
+		return
+	}
+	m.zoom = on
+	m.layout()
+	m.rerender()
 }
 
 func (m *model) rerender() {
@@ -572,6 +596,9 @@ const (
 )
 
 func (m *model) sidebarWidth() int {
+	if m.zoom {
+		return 0
+	}
 	w := m.width * 32 / 100
 	return min(max(w, 30), 48)
 }
@@ -595,7 +622,10 @@ func (m *model) View() string {
 	if !m.ready {
 		return ""
 	}
-	body := lipgloss.JoinHorizontal(lipgloss.Top, m.viewSidebar(), m.viewLogs())
+	body := m.viewLogs()
+	if !m.zoom {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, m.viewSidebar(), body)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, m.viewHeader(), body, m.viewFooter())
 }
 
@@ -705,6 +735,9 @@ func (m *model) viewLogs() string {
 	if m.raw {
 		meta += sMuted.Render(" · raw")
 	}
+	if m.noWrap {
+		meta += sMuted.Render(" · no wrap")
+	}
 	if !m.follow {
 		meta += "  " + sWarn.Render("paused · G to follow")
 	}
@@ -745,7 +778,7 @@ func (m *model) viewFooter() string {
 	} else if m.focus == focusSidebar {
 		hints = append(hints, keyHint("drag", "copy"))
 	}
-	hints = append(hints, keyHint("x", "stop"), keyHint("h", "health"), keyHint("J", "json"), keyHint("r", "raw"), keyHint("tab", "focus"), keyHint("q", "quit"))
+	hints = append(hints, keyHint("x", "stop"), keyHint("h", "health"), keyHint("J", "json"), keyHint("r", "raw"), keyHint("w", "wrap"), keyHint("z", "zoom"), keyHint("tab", "focus"), keyHint("q", "quit"))
 	line := ansi.Truncate(" "+strings.Join(hints, "  "), m.width, "…")
 
 	flash := ""

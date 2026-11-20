@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"hash/fnv"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -86,6 +87,19 @@ func DetectLevel(msg string) Level {
 }
 
 func jsonLevel(fields map[string]any) Level {
+	// pino and bunyan use numbers: 10 trace, 20 debug, 30 info, 40 warn, 50 error, 60 fatal.
+	if n, ok := fields["level"].(float64); ok {
+		switch {
+		case n >= 50:
+			return LevelError
+		case n >= 40:
+			return LevelWarn
+		case n >= 30:
+			return LevelInfo
+		case n >= 10:
+			return LevelDebug
+		}
+	}
 	for _, k := range []string{"level", "severity", "lvl", "log.level", "loglevel"} {
 		if v, ok := fields[k].(string); ok {
 			if l := levelFromWord(v); l != LevelNone {
@@ -109,7 +123,73 @@ type Line struct {
 	Message     string
 	FullMessage string
 	Level       Level
-	JSON        map[string]any
+	// JSON is set when the whole message is a JSON object; Tail holds a JSON
+	// object that follows plain text, which Message then excludes.
+	JSON map[string]any
+	Tail string
+	HTTP *HTTPRequest
+}
+
+// HTTPRequest is an access-log record found in a line's JSON, in the shape
+// written by express-winston (under "meta") and pino-http.
+type HTTPRequest struct {
+	Method   string
+	Path     string
+	Status   int
+	Duration float64 // milliseconds, -1 when absent
+}
+
+func asMap(v any) map[string]any {
+	m, _ := v.(map[string]any)
+	return m
+}
+
+func httpRequest(fields map[string]any) *HTTPRequest {
+	for _, root := range []map[string]any{fields, asMap(fields["meta"])} {
+		req, res := asMap(root["req"]), asMap(root["res"])
+		if req == nil || res == nil {
+			continue
+		}
+		method, _ := req["method"].(string)
+		path, _ := req["originalUrl"].(string)
+		if path == "" {
+			path, _ = req["url"].(string)
+		}
+		status, ok := res["statusCode"].(float64)
+		if method == "" || path == "" || !ok {
+			continue
+		}
+		h := &HTTPRequest{Method: method, Path: path, Status: int(status), Duration: -1}
+		if d, ok := root["responseTime"].(float64); ok {
+			h.Duration = d
+		} else if d, ok := fields["responseTime"].(float64); ok {
+			h.Duration = d
+		}
+		return h
+	}
+	return nil
+}
+
+// splitJSON finds a JSON object that ends msg, returning the text before it.
+func splitJSON(msg string) (text, obj string, fields map[string]any) {
+	trimmed := strings.TrimSpace(msg)
+	if !strings.HasSuffix(trimmed, "}") {
+		return "", "", nil
+	}
+	start := 0
+	for range 8 {
+		i := strings.IndexByte(trimmed[start:], '{')
+		if i < 0 {
+			break
+		}
+		i += start
+		var f map[string]any
+		if json.Unmarshal([]byte(trimmed[i:]), &f) == nil {
+			return strings.TrimSpace(trimmed[:i]), trimmed[i:], f
+		}
+		start = i + 1
+	}
+	return "", "", nil
 }
 
 // Parse splits raw into source prefix, timestamp and message, dropping
@@ -137,17 +217,16 @@ func Parse(raw string) Line {
 		l.Level, l.Message = nestLevels[m[1]], m[2]
 	}
 
-	trimmed := strings.TrimSpace(l.Message)
-	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
-		var fields map[string]any
-		if json.Unmarshal([]byte(trimmed), &fields) == nil {
-			l.JSON = fields
-			l.Message = trimmed
-			if l.Level == LevelNone {
-				l.Level = jsonLevel(fields)
-			}
+	if text, obj, fields := splitJSON(l.Message); fields != nil {
+		l.HTTP = httpRequest(fields)
+		if l.Level == LevelNone {
+			l.Level = jsonLevel(fields)
+		}
+		if text == "" {
+			l.JSON, l.Message = fields, obj
 			return l
 		}
+		l.Message, l.Tail = strings.TrimRight(text, " -:|"), obj
 	}
 	if l.Level != LevelNone {
 		return l
@@ -243,14 +322,17 @@ type FormatOptions struct {
 	// Raw shows the original source and message for every line, not just
 	// warnings and errors.
 	Raw bool
+	// NoWrap cuts lines off at Width instead of wrapping them.
+	NoWrap bool
 }
 
 // Format renders a parsed line, wrapped to opts.Width. The result may span
 // several terminal lines.
 func Format(l Line, opts FormatOptions) string {
-	src, msg := l.Source, l.Message
-	if opts.Raw || l.Level >= LevelWarn {
-		src, msg = l.FullSource, l.FullMessage
+	full := opts.Raw || l.Level >= LevelWarn
+	src := l.Source
+	if full {
+		src = l.FullSource
 	}
 
 	var head strings.Builder
@@ -267,17 +349,55 @@ func Format(l Line, opts FormatOptions) string {
 
 	msgStyle := messageStyle(l.Level)
 	var body string
-	if l.JSON != nil && opts.PrettyJSON {
+	switch {
+	case !full && l.HTTP != nil:
+		body = formatHTTP(l.HTTP)
+	case l.JSON != nil && opts.PrettyJSON:
 		body = "\n" + prettyJSON(l.Message)
-	} else {
-		body = msgStyle.Render(msg)
+	case full:
+		body = msgStyle.Render(l.FullMessage)
+	case l.Tail != "":
+		body = msgStyle.Render(l.Message) + " " + sMuted.Render("{…}")
+	default:
+		body = msgStyle.Render(l.Message)
 	}
 
 	out := head.String() + body
-	if opts.Width > 0 {
+	switch {
+	case opts.Width <= 0:
+	case opts.NoWrap:
+		lines := strings.Split(out, "\n")
+		for i, ln := range lines {
+			lines[i] = ansi.Truncate(ln, opts.Width, "…")
+		}
+		out = strings.Join(lines, "\n")
+	default:
 		out = lipgloss.NewStyle().Width(opts.Width).Render(out)
 	}
 	return out
+}
+
+// formatHTTP renders an access-log record as "GET /path 200 12ms".
+func formatHTTP(h *HTTPRequest) string {
+	var status lipgloss.Style
+	switch {
+	case h.Status >= 500:
+		status = sError
+	case h.Status >= 400:
+		status = sWarn
+	case h.Status >= 300:
+		status = sBadgeInf
+	default:
+		status = sOK
+	}
+	s := sBold.Render(h.Method) + " " + h.Path + " " + status.Render(strconv.Itoa(h.Status))
+	switch {
+	case h.Duration >= 1000:
+		s += " " + sMuted.Render(strconv.FormatFloat(h.Duration/1000, 'f', 1, 64)+"s")
+	case h.Duration >= 0:
+		s += " " + sMuted.Render(strconv.FormatFloat(h.Duration, 'f', -1, 64)+"ms")
+	}
+	return s
 }
 
 func prettyJSON(s string) string {

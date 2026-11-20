@@ -43,7 +43,9 @@ loggy targets rm    # remove saved services
 | `x` / `ctrl+c` | Stop the current stream |
 | `h` | Show/hide health-check lines (no restart) |
 | `J` | Toggle pretty / compact JSON |
-| `r` | Toggle raw lines. By default the full pod name and repeated logger prefixes (for example NestJS's app name, PID and date) are trimmed; warnings and errors always show the full line |
+| `r` | Toggle raw lines. By default the full pod name and repeated logger prefixes (for example NestJS's app name, PID and date) are trimmed, HTTP access logs (express-winston, pino-http) are summarised as `GET /path 200 12ms`, and JSON after a message shows as `{…}`; warnings and errors always show the full line |
+| `w` | Toggle wrapping; when off, long lines are cut off at the pane edge (`y` and saved files still have the full text) |
+| `z` | Zoom: hide the sidebar for a full-width log pane (`esc` or `tab` brings it back) |
 | mouse drag | Select any part of the log pane; releasing copies it to the clipboard as plain text |
 | `y` | Copy the selection, or every visible log line if nothing is selected |
 | `esc` | Clear the selection |
