@@ -13,6 +13,16 @@ var (
 	colInfo   = lipgloss.AdaptiveColor{Light: "#1E6FB8", Dark: "#7CB7FF"}
 	colOK     = lipgloss.AdaptiveColor{Light: "#2E7D32", Dark: "#7BD88F"}
 	colKey    = lipgloss.AdaptiveColor{Light: "#6A4FB3", Dark: "#C3B5FF"}
+
+	// colSources tells pods apart; none of them reuse the level colours.
+	colSources = []lipgloss.AdaptiveColor{
+		{Light: "#00838F", Dark: "#5FD7D7"},
+		{Light: "#AD1457", Dark: "#F48FB1"},
+		{Light: "#6D4C41", Dark: "#D7B98E"},
+		{Light: "#3949AB", Dark: "#9FA8FF"},
+		{Light: "#558B2F", Dark: "#B5E07A"},
+		{Light: "#8E24AA", Dark: "#E1A3F0"},
+	}
 )
 
 var (

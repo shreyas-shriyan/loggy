@@ -156,7 +156,14 @@ type model struct {
 	entries    []entry
 	hideHealth bool
 	pretty     bool
+	raw        bool
 	follow     bool
+
+	// visual and plain hold the viewport content as rendered and ANSI-stripped
+	// lines; nil while the empty-state message is shown.
+	visual []string
+	plain  []string
+	sel    selection
 
 	stream *streamState
 	nextID int
@@ -339,10 +346,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
-		var cmd tea.Cmd
-		m.vp, cmd = m.vp.Update(msg)
-		m.follow = m.vp.AtBottom()
-		return m, cmd
+		return m.handleMouse(msg)
+
+	case copiedMsg:
+		if msg.err != nil {
+			m.setFlash("Copy failed: "+msg.err.Error(), true)
+		} else {
+			m.setFlash(fmt.Sprintf("Copied %s to the clipboard (%s).", msg.what, msg.via), false)
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -381,10 +393,17 @@ func (m *model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "h":
 		m.hideHealth = !m.hideHealth
+		m.sel = selection{}
 		m.refresh()
 		return m, nil
+	case "y":
+		return m, m.copyAll()
 	case "J":
 		m.pretty = !m.pretty
+		m.rerender()
+		return m, nil
+	case "r":
+		m.raw = !m.raw
 		m.rerender()
 		return m, nil
 	case "G", "end":
@@ -397,6 +416,11 @@ func (m *model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.exit(ActAdd)
 	case "p":
 		return m.exit(ActSettings)
+	}
+
+	if key == "esc" && (m.sel.has || m.sel.dragging) {
+		m.clearSelection()
+		return m, nil
 	}
 
 	if m.focus == focusLogs {
@@ -458,23 +482,32 @@ func (m *model) setFlash(s string, isErr bool) {
 }
 
 func (m *model) appendLines(lines []string) {
-	w := m.vp.Width
 	for _, l := range lines {
+		// Apps that colour their own output would otherwise leak escape codes
+		// into copies and defeat the health patterns.
+		l = ansi.Strip(l)
 		e := entry{raw: l, health: stream.IsHealthCheck(l)}
-		e.rendered = Format(Parse(l), FormatOptions{Width: w, PrettyJSON: m.pretty})
+		e.rendered = Format(Parse(l), m.formatOptions())
 		m.entries = append(m.entries, e)
 	}
 	if over := len(m.entries) - maxLines; over > 0 {
 		m.entries = append(m.entries[:0:0], m.entries[over:]...)
+		// Dropping lines from the top shifts every position.
+		m.sel = selection{}
 	}
 	m.refresh()
 }
 
+func (m *model) formatOptions() FormatOptions {
+	return FormatOptions{Width: m.vp.Width, PrettyJSON: m.pretty, Raw: m.raw}
+}
+
 func (m *model) rerender() {
-	w := m.vp.Width
+	opts := m.formatOptions()
 	for i := range m.entries {
-		m.entries[i].rendered = Format(Parse(m.entries[i].raw), FormatOptions{Width: w, PrettyJSON: m.pretty})
+		m.entries[i].rendered = Format(Parse(m.entries[i].raw), opts)
 	}
+	m.sel = selection{}
 	m.refresh()
 }
 
@@ -503,9 +536,16 @@ func (m *model) refresh() {
 	}
 	content := strings.TrimSuffix(b.String(), "\n")
 	if content == "" {
-		content = m.emptyState()
+		m.visual, m.plain, m.sel = nil, nil, selection{}
+		m.vp.SetContent(m.emptyState())
+		return
 	}
-	m.vp.SetContent(content)
+	m.visual = strings.Split(content, "\n")
+	m.plain = make([]string, len(m.visual))
+	for i, l := range m.visual {
+		m.plain[i] = ansi.Strip(l)
+	}
+	m.applyContent()
 	if m.follow {
 		m.vp.GotoBottom()
 	}
@@ -569,6 +609,19 @@ func (m *model) viewHeader() string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
+// itemHeight is the number of rows one sidebar item takes.
+const itemHeight = 3
+
+// sidebarWindow returns the first visible sidebar item and how many fit.
+func (m *model) sidebarWindow() (first, capacity int) {
+	innerH := m.bodyHeight() - sPane.GetVerticalFrameSize()
+	capacity = max((innerH-4)/itemHeight, 1)
+	if m.cursor >= capacity {
+		first = m.cursor - capacity + 1
+	}
+	return first, capacity
+}
+
 func (m *model) viewSidebar() string {
 	w := m.sidebarWidth()
 	style := sPane
@@ -581,12 +634,7 @@ func (m *model) viewSidebar() string {
 	var rows []string
 	rows = append(rows, sBold.Render("Servers"), "")
 
-	const itemHeight = 3
-	capacity := max((innerH-4)/itemHeight, 1)
-	first := 0
-	if m.cursor >= capacity {
-		first = m.cursor - capacity + 1
-	}
+	first, capacity := m.sidebarWindow()
 	for i := first; i < len(m.opts.Items) && i < first+capacity; i++ {
 		rows = append(rows, m.viewItem(m.opts.Items[i], i == m.cursor, innerW)...)
 	}
@@ -654,6 +702,9 @@ func (m *model) viewLogs() string {
 	if m.hideHealth {
 		meta += sMuted.Render(" · health hidden")
 	}
+	if m.raw {
+		meta += sMuted.Render(" · raw")
+	}
 	if !m.follow {
 		meta += "  " + sWarn.Render("paused · G to follow")
 	}
@@ -682,14 +733,19 @@ func keyHint(k, label string) string { return sKey.Render(k) + sMuted.Render(" "
 func (m *model) viewFooter() string {
 	var hints []string
 	if m.focus == focusLogs {
-		hints = []string{keyHint("↑↓/pgup/pgdn", "scroll"), keyHint("g/G", "top/follow"), keyHint("esc", "servers")}
+		hints = []string{keyHint("drag", "select+copy"), keyHint("y", "copy all"), keyHint("↑↓/pgup/pgdn", "scroll"), keyHint("g/G", "top/follow"), keyHint("esc", "servers")}
 	} else {
 		hints = []string{keyHint("enter", "live"), keyHint("a", "all logs"), keyHint("c", "custom"), keyHint("s", "save")}
 		if it, ok := m.selected(); ok && it.Unsaved {
 			hints = append(hints, keyHint("S", "save server"))
 		}
 	}
-	hints = append(hints, keyHint("x", "stop"), keyHint("h", "health"), keyHint("J", "json"), keyHint("tab", "focus"), keyHint("q", "quit"))
+	if m.sel.has {
+		hints = append([]string{keyHint("y", "copy selection"), keyHint("esc", "clear")}, hints...)
+	} else if m.focus == focusSidebar {
+		hints = append(hints, keyHint("drag", "copy"))
+	}
+	hints = append(hints, keyHint("x", "stop"), keyHint("h", "health"), keyHint("J", "json"), keyHint("r", "raw"), keyHint("tab", "focus"), keyHint("q", "quit"))
 	line := ansi.Truncate(" "+strings.Join(hints, "  "), m.width, "…")
 
 	flash := ""

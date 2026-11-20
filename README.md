@@ -43,6 +43,10 @@ loggy targets rm    # remove saved services
 | `x` / `ctrl+c` | Stop the current stream |
 | `h` | Show/hide health-check lines (no restart) |
 | `J` | Toggle pretty / compact JSON |
+| `r` | Toggle raw lines. By default the full pod name and repeated logger prefixes (for example NestJS's app name, PID and date) are trimmed; warnings and errors always show the full line |
+| mouse drag | Select any part of the log pane; releasing copies it to the clipboard as plain text |
+| `y` | Copy the selection, or every visible log line if nothing is selected |
+| `esc` | Clear the selection |
 | `tab` | Switch focus between servers and logs (scroll with `↑↓`, `pgup`/`pgdn`, mouse wheel; `g`/`G` top/follow) |
 | `n` / `d` / `p` | Add server / remove servers / configure AWS profile and region |
 | `e` | Switch dev / prod |
@@ -50,6 +54,8 @@ loggy targets rm    # remove saved services
 | `q` | Quit |
 
 Forms (adding servers, custom ranges, SSO sign-in) briefly leave the dashboard and return to it afterwards. The log pane keeps the latest 5,000 lines.
+
+Copying uses `clip.exe` on Windows and WSL, `pbcopy` on macOS, and `wl-copy`/`xclip`/`xsel` on Linux desktops, falling back to the terminal's OSC 52 clipboard. Selections copy what is on screen, so wrapped lines and pretty-printed JSON keep their line breaks; use `J` for compact JSON or `y` for the original unwrapped lines.
 
 ## Sign-in
 
