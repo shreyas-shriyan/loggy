@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.92.2
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.106.0
 	github.com/aws/aws-sdk-go-v2/service/eks v1.105.6
+	github.com/aws/aws-sdk-go-v2/service/sso v1.39.5
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.52.0
 	github.com/aws/smithy-go v1.28.9
@@ -35,7 +36,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.25 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.14.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.39.5 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect

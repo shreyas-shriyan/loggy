@@ -73,7 +73,7 @@ func Ensure(ctx context.Context, profile, region string, out io.Writer, confirm 
 	if !confirm(fmt.Sprintf("Your SSO session for %q has expired. Sign in now in the browser?", displayProfile(profile))) {
 		return nil, errors.New("sign-in cancelled")
 	}
-	if err := DeviceLogin(ctx, *sso, out); err != nil {
+	if err := Login(ctx, *sso, out); err != nil {
 		return nil, err
 	}
 
@@ -101,7 +101,7 @@ func ssoSettings(ctx context.Context, profile string) (*SSOSettings, error) {
 	if name == "" {
 		name = "default"
 	}
-	sc, err := awsconfig.LoadSharedConfigProfile(ctx, name)
+	sc, err := awsconfig.LoadSharedConfigProfile(ctx, name, sharedFiles)
 	if err != nil {
 		return nil, err
 	}
@@ -121,23 +121,16 @@ func ssoSettings(ctx context.Context, profile string) (*SSOSettings, error) {
 // ListProfiles returns profile names from the shared AWS config and credentials files.
 func ListProfiles() []string {
 	seen := map[string]bool{}
-	home, _ := os.UserHomeDir()
-	files := []struct {
-		path     string
-		isConfig bool
-		envVar   string
-	}{
-		{filepath.Join(home, ".aws", "config"), true, "AWS_CONFIG_FILE"},
-		{filepath.Join(home, ".aws", "credentials"), false, "AWS_SHARED_CREDENTIALS_FILE"},
+	for _, s := range readSections(ConfigFile()) {
+		switch {
+		case s.name == "default":
+			seen[s.name] = true
+		case strings.HasPrefix(s.name, "profile "):
+			seen[strings.TrimSpace(strings.TrimPrefix(s.name, "profile "))] = true
+		}
 	}
-	for _, f := range files {
-		path := f.path
-		if p := os.Getenv(f.envVar); p != "" {
-			path = p
-		}
-		for _, name := range sectionNames(path, f.isConfig) {
-			seen[name] = true
-		}
+	for _, s := range readSections(CredentialsFile()) {
+		seen[s.name] = true
 	}
 	out := make([]string, 0, len(seen))
 	for n := range seen {
@@ -147,30 +140,51 @@ func ListProfiles() []string {
 	return out
 }
 
-func sectionNames(path string, isConfig bool) []string {
+// ConfigFile returns the path of the shared AWS config file.
+func ConfigFile() string { return sharedFile("AWS_CONFIG_FILE", "config") }
+
+// CredentialsFile returns the path of the shared AWS credentials file.
+func CredentialsFile() string { return sharedFile("AWS_SHARED_CREDENTIALS_FILE", "credentials") }
+
+// sharedFiles makes LoadSharedConfigProfile honour AWS_CONFIG_FILE and
+// AWS_SHARED_CREDENTIALS_FILE, which it ignores by default.
+func sharedFiles(o *awsconfig.LoadSharedConfigOptions) {
+	o.ConfigFiles = []string{ConfigFile()}
+	o.CredentialsFiles = []string{CredentialsFile()}
+}
+
+func sharedFile(envVar, name string) string {
+	if p := os.Getenv(envVar); p != "" {
+		return p
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".aws", name)
+}
+
+type section struct {
+	name string
+	keys map[string]string
+}
+
+// readSections parses an INI file into sections; a missing file has none.
+func readSections(path string) []section {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
 	defer f.Close()
-	var names []string
+	var out []section
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		if !strings.HasPrefix(line, "[") || !strings.HasSuffix(line, "]") {
-			continue
-		}
-		name := strings.TrimSpace(line[1 : len(line)-1])
-		if isConfig {
-			switch {
-			case name == "default":
-			case strings.HasPrefix(name, "profile "):
-				name = strings.TrimSpace(strings.TrimPrefix(name, "profile "))
-			default:
-				continue
+		switch {
+		case strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]"):
+			out = append(out, section{name: strings.TrimSpace(line[1 : len(line)-1]), keys: map[string]string{}})
+		case len(out) > 0 && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, ";"):
+			if k, v, ok := strings.Cut(line, "="); ok {
+				out[len(out)-1].keys[strings.TrimSpace(k)] = strings.TrimSpace(v)
 			}
 		}
-		names = append(names, name)
 	}
-	return names
+	return out
 }

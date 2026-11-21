@@ -21,6 +21,9 @@ import (
 // dashboard runs the full-screen UI for env, leaving it whenever a prompt is needed.
 // extra holds unsaved targets (from `loggy menu`) shown after the saved ones.
 func (a *App) dashboard(env string, extra []config.Target) error {
+	if err := a.ensureEnvConfigured(env); err != nil {
+		return err
+	}
 	ctx := context.Background()
 	cursor := 0
 	if len(extra) > 0 {
@@ -57,7 +60,10 @@ func (a *App) dashboard(env string, extra []config.Target) error {
 		case ui.ActQuit:
 			return nil
 		case ui.ActSwitchEnv:
-			env, cursor, extra = otherEnv(env), 0, nil
+			next := otherEnv(env)
+			if err = a.ensureEnvConfigured(next); err == nil {
+				env, cursor, extra = next, 0, nil
+			}
 		case ui.ActAdd:
 			err = a.addTarget(ctx, env)
 			if err == nil {

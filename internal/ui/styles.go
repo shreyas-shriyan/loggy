@@ -7,7 +7,6 @@ var (
 	colAccent = lipgloss.AdaptiveColor{Light: "#5A48D6", Dark: "#A496FF"}
 	colMuted  = lipgloss.AdaptiveColor{Light: "#7B7B86", Dark: "#7E7E8E"}
 	colBorder = lipgloss.AdaptiveColor{Light: "#D3D3DC", Dark: "#3B3B4A"}
-	colSelBg  = lipgloss.AdaptiveColor{Light: "#ECE9FF", Dark: "#2B2840"}
 	colError  = lipgloss.AdaptiveColor{Light: "#C62828", Dark: "#FF6B6B"}
 	colWarn   = lipgloss.AdaptiveColor{Light: "#A15C00", Dark: "#F2C14E"}
 	colInfo   = lipgloss.AdaptiveColor{Light: "#1E6FB8", Dark: "#7CB7FF"}
@@ -42,7 +41,6 @@ var (
 	sPane        = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colBorder).Padding(0, 1)
 	sPaneFocused = sPane.BorderForeground(colAccent)
 
-	sSelected = lipgloss.NewStyle().Background(colSelBg)
-	sEnvPill  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#1A1A24"}).Background(colAccent).Bold(true).Padding(0, 1)
-	sKey      = lipgloss.NewStyle().Foreground(colKey).Bold(true)
+	sEnvPill = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#1A1A24"}).Background(colAccent).Bold(true).Padding(0, 1)
+	sKey     = lipgloss.NewStyle().Foreground(colKey).Bold(true)
 )

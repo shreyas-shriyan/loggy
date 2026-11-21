@@ -120,6 +120,19 @@ func Input(title, value, placeholder string, validate func(string) error) (strin
 	return strings.TrimSpace(v), nil
 }
 
+// Password prompts for text without echoing it.
+func Password(title string, validate func(string) error) (string, error) {
+	var v string
+	in := huh.NewInput().Title(title).EchoMode(huh.EchoModePassword).Value(&v)
+	if validate != nil {
+		in = in.Validate(validate)
+	}
+	if err := run(in); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(v), nil
+}
+
 // Confirm asks a yes/no question.
 func Confirm(title string, def bool) (bool, error) {
 	v := def

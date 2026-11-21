@@ -61,7 +61,9 @@ Copying uses `clip.exe` on Windows and WSL, `pbcopy` on macOS, and `wl-copy`/`xc
 
 ## Sign-in
 
-loggy checks the profile's credentials with STS. If an IAM Identity Center (SSO) session has expired, it offers to sign in: it opens the browser and writes the token to `~/.aws/sso/cache`, exactly like `aws sso login`. Profiles that use other credential types must be refreshed outside loggy.
+loggy checks the profile's credentials with STS. If an IAM Identity Center (SSO) session has expired, it offers to sign in and writes the token to `~/.aws/sso/cache`, exactly like `aws sso login`. Like the AWS CLI, profiles that use an `[sso-session]` sign in through the browser and return to loggy automatically (authorization code with PKCE, via a short-lived server on `127.0.0.1`). Older SSO profiles, machines where no browser can be opened, and `LOGGY_SSO_DEVICE_CODE=1` use a device code instead: open the printed URL on any device and confirm the code. Profiles that use other credential types must be refreshed outside loggy.
+
+To create a profile without the AWS CLI, choose **Add a new AWS profile...** in the profile picker (`p` in the dashboard, or the first `loggy setup`). For SSO, loggy signs in to an existing or new `[sso-session]`, lists your accounts and roles, and appends the profile to `~/.aws/config`, like `aws configure sso`. For an access key, the key goes into `~/.aws/credentials`.
 
 ## Configuration
 
@@ -69,6 +71,7 @@ loggy checks the profile's credentials with STS. If an IAM Identity Center (SSO)
 | --- | --- | --- |
 | `LOGGY_CONFIG` | `~/.config/loggy/config.yaml` (macOS: `~/Library/Application Support/loggy/config.yaml`) | Settings and saved targets (written with `0600`) |
 | `LOGGY_LOG_DIR` | `./logs` | Where saved log files go |
+| `LOGGY_SSO_DEVICE_CODE` | unset | Set to `1` to always sign in to SSO with a device code (for example over SSH) |
 
 ```yaml
 environments:
@@ -110,3 +113,7 @@ make test vet
 ```
 
 Layout: `cmd/loggy` (entrypoint), `internal/cli` (commands and menus), `internal/config` (YAML config), `internal/awsauth` (profiles, SSO), `internal/eks`, `internal/ecs`, `internal/cwlogs`, `internal/stream` (filters, files, Ctrl+C), `internal/ui` (dashboard and log formatting), `internal/tui` (form prompts).
+
+## License
+
+[MIT](LICENSE)

@@ -65,10 +65,15 @@ func (a *App) saveTarget(t config.Target) error {
 }
 
 func (a *App) ensureEnvConfigured(env string) error {
-	if a.cfg.Env(env).Region != "" {
+	e := a.cfg.Env(env)
+	switch {
+	case e.Profile == "":
+		a.printf("The %s environment has no AWS profile yet; choose or add one first.\n", env)
+	case e.Region == "":
+		a.printf("The %s environment has no AWS region yet; configure it first.\n", env)
+	default:
 		return nil
 	}
-	a.printf("The %s environment has no AWS region yet; configure it first.\n", env)
 	return a.configureEnv(env)
 }
 
@@ -211,23 +216,30 @@ func (a *App) configureEnv(env string) error {
 		}
 		opts = append(opts, tui.Opt{Key: p, Label: label})
 	}
-	opts = append(opts, tui.Opt{Key: keyCustom, Label: "Type a profile name..."})
+	opts = append(opts,
+		tui.Opt{Key: keyNewProfile, Label: "Add a new AWS profile..."},
+		tui.Opt{Key: keyCustom, Label: "Type a profile name..."},
+	)
 	profile, err := tui.Select(fmt.Sprintf("AWS profile for %s", env), opts)
 	if err != nil {
 		return err
-	}
-	if profile == keyCustom {
-		profile, err = tui.Input("AWS profile name", e.Profile, "my-sso-profile", nonEmpty)
-		if err != nil {
-			return err
-		}
 	}
 
 	region := e.Region
 	if region == "" {
 		region = "us-east-1"
 	}
-	region, err = tui.Input(fmt.Sprintf("Default AWS region for %s", env), region, "us-east-1", nonEmpty)
+	switch profile {
+	case keyNewProfile:
+		profile, region, err = a.newProfile(context.Background(), region)
+	case keyCustom:
+		profile, err = tui.Input("AWS profile name", e.Profile, "my-sso-profile", nonEmpty)
+		if err == nil {
+			region, err = tui.Input(fmt.Sprintf("Default AWS region for %s", env), region, "us-east-1", nonEmpty)
+		}
+	default:
+		region, err = tui.Input(fmt.Sprintf("Default AWS region for %s", env), region, "us-east-1", nonEmpty)
+	}
 	if err != nil {
 		return err
 	}

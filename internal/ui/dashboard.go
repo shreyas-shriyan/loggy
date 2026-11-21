@@ -679,33 +679,50 @@ func (m *model) viewSidebar() string {
 	return style.Width(w - style.GetHorizontalBorderSize()).Height(innerH).Render(content)
 }
 
+// viewItem renders a sidebar item. A live item is green. The selected one gets
+// a bar down its left edge, coloured only while the sidebar has focus.
 func (m *model) viewItem(it Item, selected bool, width int) []string {
 	t := it.Target
-	marker := "  "
+	marker, live := "  ", false
 	if m.stream != nil && m.stream.target.Key() == t.Key() {
 		switch {
+		case m.stream.active && m.stream.status == "live":
+			marker, live = sOK.Render("● "), true
 		case m.stream.active:
-			marker = sOK.Render("● ")
+			marker = sWarn.Render("◌ ")
 		case m.stream.err != nil:
 			marker = sError.Render("● ")
 		default:
 			marker = sMuted.Render("○ ")
 		}
 	}
-	name := t.Primary()
+
+	bar, nameStyle, detailStyle := "  ", sBold, sMuted
+	if live {
+		nameStyle = sBold.Foreground(colOK)
+	}
+	if selected {
+		detailStyle = lipgloss.NewStyle()
+		switch {
+		case m.focus != focusSidebar:
+			bar = sMuted.Render("┃ ")
+		case live:
+			bar = sOK.Render("┃ ")
+		default:
+			bar = lipgloss.NewStyle().Foreground(colAccent).Render("┃ ")
+			nameStyle = sBold.Foreground(colAccent)
+		}
+	}
+
+	name := nameStyle.Render(t.Primary())
 	if it.Unsaved {
 		name += sMuted.Render(" (unsaved)")
 	}
-	line1 := marker + sBold.Render(name)
-	line2 := "  " + sMuted.Render(itemDetail(t))
-	line1 = ansi.Truncate(line1, width, "…")
-	line2 = ansi.Truncate(line2, width, "…")
-	if selected {
-		bar := lipgloss.NewStyle().Foreground(colAccent).Render("▌")
-		line1 = sSelected.Width(width).Render(bar + ansi.Truncate(line1, width-1, "…"))
-		line2 = sSelected.Width(width).Render(bar + ansi.Truncate(line2, width-1, "…"))
+	return []string{
+		ansi.Truncate(bar+marker+name, width, "…"),
+		ansi.Truncate(bar+"  "+detailStyle.Render(itemDetail(t)), width, "…"),
+		"",
 	}
-	return []string{line1, line2, ""}
 }
 
 func itemDetail(t config.Target) string {

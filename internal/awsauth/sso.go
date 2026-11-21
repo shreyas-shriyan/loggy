@@ -28,9 +28,9 @@ type SSOSettings struct {
 
 const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 
-// DeviceLogin runs the OIDC device authorization flow and writes the token to
+// deviceLogin runs the OIDC device authorization flow and writes the token to
 // ~/.aws/sso/cache in the format the AWS CLI and SDKs read.
-func DeviceLogin(ctx context.Context, s SSOSettings, out io.Writer) error {
+func deviceLogin(ctx context.Context, s SSOSettings, out io.Writer) error {
 	client := ssooidc.New(ssooidc.Options{Region: s.Region, Credentials: aws.AnonymousCredentials{}})
 
 	reg := &ssooidc.RegisterClientInput{ClientName: aws.String("loggy"), ClientType: aws.String("public")}
