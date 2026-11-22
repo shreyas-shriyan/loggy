@@ -24,3 +24,22 @@ checksum:
 
 changelog:
   sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^feat'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^fix'
+      order: 1
+    - title: Improvements
+      regexp: '^(add|improve|refactor|perf)'
+      order: 2
+    - title: Other
+      order: 999
