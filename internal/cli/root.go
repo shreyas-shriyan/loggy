@@ -2,11 +2,14 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
+	"github.com/creativeprojects/go-selfupdate"
 	"github.com/shreyas-shriyan/loggy/internal/config"
 	"github.com/shreyas-shriyan/loggy/internal/stream"
 	"github.com/shreyas-shriyan/loggy/internal/tui"
@@ -100,6 +103,14 @@ selected server and q to quit; the bottom bar lists all keys.`,
 			Args:  cobra.NoArgs,
 			Run:   func(cmd *cobra.Command, _ []string) { fmt.Fprintln(cmd.OutOrStdout(), "loggy", Version) },
 		},
+		&cobra.Command{
+			Use:   "update",
+			Short: "Update loggy to the latest release from GitHub",
+			Args:  cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				return runUpdate(cmd)
+			},
+		},
 	)
 	return root
 }
@@ -174,4 +185,43 @@ func quietBack(err error) error {
 		return nil
 	}
 	return err
+}
+
+func runUpdate(cmd *cobra.Command) error {
+	out := cmd.OutOrStdout()
+	if Version == "dev" {
+		fmt.Fprintln(out, "Skipping update check: running a dev build.")
+		return nil
+	}
+	fmt.Fprintln(out, "Checking for updates...")
+
+	updater, err := selfupdate.NewUpdater(selfupdate.Config{})
+	if err != nil {
+		return fmt.Errorf("create updater: %w", err)
+	}
+
+	latest, found, err := updater.DetectLatest(context.Background(), selfupdate.ParseSlug("shreyas-shriyan/loggy"))
+	if err != nil {
+		return fmt.Errorf("check latest release: %w", err)
+	}
+
+	current := strings.TrimPrefix(Version, "v")
+	if !found || latest.Equal(current) {
+		fmt.Fprintf(out, "loggy %s is already up to date.\n", Version)
+		return nil
+	}
+
+	fmt.Fprintf(out, "Updating %s → v%s...\n", Version, latest.Version())
+
+	exe, err := selfupdate.ExecutablePath()
+	if err != nil {
+		return fmt.Errorf("resolve executable path: %w", err)
+	}
+
+	if err := updater.UpdateTo(context.Background(), latest, exe); err != nil {
+		return fmt.Errorf("apply update: %w", err)
+	}
+
+	fmt.Fprintf(out, "Successfully updated to v%s! Restart loggy to use the new version.\n", latest.Version())
+	return nil
 }
